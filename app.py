@@ -212,7 +212,6 @@ class ClinicalEngine:
                 alerts.append({"type": "BLOCK", "msg": rule['msg']})
 
         # 7. Posologia
-        # 7. Posologia
         is_child = age_months < 144
         ped_rule = drug.get('pediatria')
         
