@@ -260,7 +260,7 @@ def main():
 
 def render_admin_panel(db):
     st.title("⚙️ Medicamentos e Interação Medicamentosa")
-    st.markdown("Interface para Farmacêuticos ou Médicos Curadores (sua equipe) cadastrarem meducamentos e interações entre eles.")
+    st.markdown("Interface para Farmacêuticos ou Médicos Curadores (sua equipe) cadastrarem medicamentos e interações entre eles.")
     
     tab_meds, tab_inter = st.tabs(["💊 Cadastrar Medicamentos", "⚠️ Cadastrar Interações"])
 
