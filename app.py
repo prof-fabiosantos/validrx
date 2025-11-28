@@ -1,343 +1,415 @@
 import streamlit as st
-from typing import List, Dict, Set, Optional
+import sqlite3
+import json
+from typing import List, Dict, Set
 
 # ==============================================================================
-# 1. CAMADA DE DADOS (REPOSITORY) - AGORA COM "VIAS PERMITIDAS"
+# 1. INFRAESTRUTURA DE BANCO DE DADOS (SQLITE)
 # ==============================================================================
 
-class DrugRepository:
-    def __init__(self):
-        self.drugs = {
-            "MED_AMOX": {
-                "id": "MED_AMOX",
-                "nome": "Amoxicilina Susp. 250mg/5ml",
-                "principio_ativo": "amoxicilina",
-                "classe_terapeutica": "antibiotico",
-                "familias_alergia": ["penicilina", "betalactamico"],
-                "concentracao_mg_ml": 50.0,
-                "min_idade_meses": 0,
-                "dose_max_diaria_adulto_mg": 3000.0,
-                "contra_indicacoes": ["mononucleose"],
-                "vias_permitidas": ["Oral"],  # CAMADA 7
-                "pediatria": {
-                    "modo": "mg_kg_dia",
-                    "min": 40.0,
-                    "max": 50.0
-                }
-            },
-            "MED_IBUP": {
-                "id": "MED_IBUP",
-                "nome": "Ibuprofeno Gotas 50mg/ml",
-                "principio_ativo": "ibuprofeno",
-                "classe_terapeutica": "aine",
-                "familias_alergia": ["aines"],
-                "concentracao_mg_ml": 50.0,
-                "min_idade_meses": 6,
-                "dose_max_diaria_adulto_mg": 2400.0,
-                "contra_indicacoes": ["dengue", "varicela", "insuficiencia_renal", "gastrite"],
-                "vias_permitidas": ["Oral"],
-                "pediatria": {
-                    "modo": "mg_kg_dose",
-                    "min": 5.0,
-                    "max": 10.0,
-                    "teto_dose": 400.0
-                }
-            },
-            "MED_DIP": {
-                "id": "MED_DIP",
-                "nome": "Dipirona Gotas 500mg/ml",
-                "principio_ativo": "dipirona",
-                "classe_terapeutica": "analgesico",
-                "familias_alergia": ["dipirona", "pirazolonas"],
-                "concentracao_mg_ml": 500.0,
-                "min_idade_meses": 3,
-                "dose_max_diaria_adulto_mg": 4000.0,
-                "contra_indicacoes": [],
-                "vias_permitidas": ["Oral", "Endovenosa (IV)", "Intramuscular (IM)"],
-                "pediatria": {
-                    "modo": "mg_kg_dose",
-                    "min": 10.0,
-                    "max": 25.0,
-                    "teto_dose": 1000.0
-                }
-            },
-            "MED_ADRE": {  # ADICIONADO: ADRENALINA
-                "id": "MED_ADRE",
-                "nome": "Adrenalina (Epinefrina) 1mg/mL",
-                "principio_ativo": "epinefrina",
-                "classe_terapeutica": "vasopressor",
-                "familias_alergia": [],
-                "concentracao_mg_ml": 1.0,
-                "min_idade_meses": 0,
-                "dose_max_diaria_adulto_mg": 1.0, 
-                "contra_indicacoes": [],
-                "vias_permitidas": ["Intramuscular (IM)", "Endovenosa (IV)", "Subcutânea"],
-                "pediatria": {
-                    "modo": "mg_kg_dose",
-                    "min": 0.01,
-                    "max": 0.01, # Dose estrita
-                    "teto_dose": 0.5 # Teto absoluto
-                }
-            },
-            "MED_DICLO": {
-                "id": "MED_DICLO",
-                "nome": "Diclofenaco Potássico 50mg",
-                "principio_ativo": "diclofenaco",
-                "classe_terapeutica": "aine",
-                "familias_alergia": ["aines"],
-                "concentracao_mg_ml": None, # Comprimido
-                "min_idade_meses": 168, 
-                "dose_max_diaria_adulto_mg": 150.0,
-                "contra_indicacoes": ["insuficiencia_renal", "hipertensao", "dengue"],
-                "vias_permitidas": ["Oral"],
-                "pediatria": None
-            },
-            "MED_VARF": {
-                "id": "MED_VARF",
-                "nome": "Varfarina 5mg",
-                "principio_ativo": "varfarina",
-                "classe_terapeutica": "anticoagulante",
-                "familias_alergia": ["cumarinicos"],
-                "concentracao_mg_ml": None,
-                "min_idade_meses": 0,
-                "dose_max_diaria_adulto_mg": 15.0,
-                "contra_indicacoes": ["hemorragia_ativa"],
-                "vias_permitidas": ["Oral"],
+class DatabaseManager:
+    def __init__(self, db_name="validrx.db"):
+        self.conn = sqlite3.connect(db_name, check_same_thread=False)
+        self.create_tables()
+        self.seed_data_if_empty()
+
+    def create_tables(self):
+        """Cria a estrutura do banco se não existir."""
+        cursor = self.conn.cursor()
+        
+        # Tabela Medicamentos
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS medicamentos (
+                id TEXT PRIMARY KEY,
+                nome TEXT,
+                principio_ativo TEXT,
+                classe_terapeutica TEXT,
+                familias_alergia TEXT, -- JSON
+                concentracao_mg_ml REAL,
+                min_idade_meses INTEGER,
+                dose_max_diaria_adulto_mg REAL,
+                contra_indicacoes TEXT, -- JSON
+                vias_permitidas TEXT -- JSON
+            )
+        ''')
+
+        # Tabela Regras Pediátricas
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS pediatria (
+                medicamento_id TEXT PRIMARY KEY,
+                modo TEXT,
+                min REAL,
+                max REAL,
+                teto_dose REAL,
+                FOREIGN KEY(medicamento_id) REFERENCES medicamentos(id)
+            )
+        ''')
+
+        # Tabela Interações
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS interacoes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                substancia_a TEXT,
+                substancia_b TEXT,
+                nivel TEXT,
+                mensagem TEXT
+            )
+        ''')
+        self.conn.commit()
+
+    def seed_data_if_empty(self):
+        """Popula o banco com dados iniciais se estiver vazio (Bootstrapping)."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT count(*) FROM medicamentos")
+        if cursor.fetchone()[0] == 0:
+            # Inserindo Adrenalina (Exemplo Crítico)
+            self.add_drug(
+                "MED_ADRE", "Adrenalina 1mg/mL", "epinefrina", "vasopressor", [],
+                1.0, 0, 1.0, [], ["Intramuscular (IM)", "Endovenosa (IV)", "Subcutânea"],
+                {"modo": "mg_kg_dose", "min": 0.01, "max": 0.01, "teto_dose": 0.5}
+            )
+            # Inserindo Amoxicilina
+            self.add_drug(
+                "MED_AMOX", "Amoxicilina Susp. 250mg/5ml", "amoxicilina", "antibiotico", ["penicilina"],
+                50.0, 0, 3000.0, ["mononucleose"], ["Oral"],
+                {"modo": "mg_kg_dia", "min": 40.0, "max": 50.0, "teto_dose": 0}
+            )
+            # Inserindo Ibuprofeno
+            self.add_drug(
+                "MED_IBUP", "Ibuprofeno Gotas 50mg/ml", "ibuprofeno", "aine", ["aines"],
+                50.0, 6, 2400.0, ["dengue", "gastrite", "insuficiencia_renal"], ["Oral"],
+                {"modo": "mg_kg_dose", "min": 5.0, "max": 10.0, "teto_dose": 400.0}
+            )
+            # Inserindo Varfarina
+            self.add_drug(
+                "MED_VARF", "Varfarina 5mg", "varfarina", "anticoagulante", ["cumarinicos"],
+                0.0, 0, 15.0, ["hemorragia_ativa"], ["Oral"], None
+            )
+            
+            # Inserindo Interação Clássica
+            self.add_interaction("varfarina", "ibuprofeno", "ALTO", "🔴 RISCO HEMORRÁGICO: AINEs aumentam efeito da Varfarina.")
+            print("Banco de dados populado com sucesso!")
+
+    # --- MÉTODOS DE CADASTRO (BACKOFFICE) ---
+    def add_drug(self, id, nome, principio, classe, alergias, conc, min_idade, max_adulto, contras, vias, ped_rule):
+        cursor = self.conn.cursor()
+        # Tratamento para concentração 0.0 (Comprimidos)
+        conc_val = conc if conc > 0 else None
+        
+        cursor.execute('''
+            INSERT OR REPLACE INTO medicamentos VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (id, nome, principio, classe, json.dumps(alergias), conc_val, min_idade, max_adulto, json.dumps(contras), json.dumps(vias)))
+        
+        if ped_rule:
+            cursor.execute('''
+                INSERT OR REPLACE INTO pediatria VALUES (?, ?, ?, ?, ?)
+            ''', (id, ped_rule['modo'], ped_rule['min'], ped_rule['max'], ped_rule.get('teto_dose', 0)))
+        
+        self.conn.commit()
+
+    def add_interaction(self, sub_a, sub_b, nivel, msg):
+        cursor = self.conn.cursor()
+        cursor.execute("INSERT INTO interacoes (substancia_a, substancia_b, nivel, mensagem) VALUES (?, ?, ?, ?)", 
+                       (sub_a, sub_b, nivel, msg))
+        self.conn.commit()
+
+    # --- MÉTODOS DE LEITURA (CLÍNICO) ---
+    def get_all_drugs_dict(self):
+        """Reconstrói o dicionário completo para a Engine usar."""
+        cursor = self.conn.cursor()
+        drugs = {}
+        
+        cursor.execute("SELECT * FROM medicamentos")
+        rows = cursor.fetchall()
+        
+        for r in rows:
+            m_id = r[0]
+            drug_obj = {
+                "id": m_id, "nome": r[1], "principio_ativo": r[2], "classe_terapeutica": r[3],
+                "familias_alergia": json.loads(r[4]), "concentracao_mg_ml": r[5],
+                "min_idade_meses": r[6], "dose_max_diaria_adulto_mg": r[7],
+                "contra_indicacoes": json.loads(r[8]), "vias_permitidas": json.loads(r[9]),
                 "pediatria": None
             }
-        }
+            # Busca regra pediatrica
+            cursor.execute("SELECT * FROM pediatria WHERE medicamento_id = ?", (m_id,))
+            ped = cursor.fetchone()
+            if ped:
+                drug_obj["pediatria"] = {
+                    "modo": ped[1], "min": ped[2], "max": ped[3], "teto_dose": ped[4]
+                }
+            drugs[m_id] = drug_obj
+            
+        return drugs
 
-        self.interactions = [
-            {
-                "pair": {"varfarina", "ibuprofeno"},
-                "level": "ALTO",
-                "msg": "🔴 RISCO HEMORRÁGICO: AINEs aumentam o efeito da Varfarina."
-            },
-            {
-                "pair": {"ibuprofeno", "diclofenaco"},
-                "level": "MEDIO",
-                "msg": "⚠️ DUPLICIDADE TÓXICA: Associação de dois AINEs aumenta risco renal."
-            }
-        ]
-
-    def get_drug(self, drug_id: str) -> dict:
-        return self.drugs.get(drug_id)
-
-    def get_all_drugs_list(self) -> dict:
-        return {v['nome']: k for k, v in self.drugs.items()}
-
-    def check_interaction(self, active_principles: Set[str]) -> List[str]:
-        alerts = []
-        for rule in self.interactions:
-            if rule['pair'].issubset(active_principles):
-                alerts.append(f"{rule['msg']}")
-        return alerts
-
+    def get_interactions(self):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM interacoes")
+        raw = cursor.fetchall()
+        rules = []
+        for r in raw:
+            rules.append({
+                "pair": {r[1], r[2]}, "level": r[3], "msg": r[4]
+            })
+        return rules
 
 # ==============================================================================
-# 2. CAMADA DE NEGÓCIO (ENGINE COM 7 CAMADAS)
+# 2. ENGINE CLÍNICA (LÓGICA - Inalterada, só recebe dados)
 # ==============================================================================
-
 class ClinicalEngine:
-    def __init__(self, repository: DrugRepository):
-        self.repo = repository
+    def __init__(self, drugs_dict, interactions_list):
+        self.drugs = drugs_dict
+        self.interactions = interactions_list
 
-    def validate_prescription(self, patient_profile: dict, prescription_item: dict) -> List[dict]:
+    def validate(self, patient, prescription):
         alerts = []
-        drug = self.repo.get_drug(prescription_item['drug_id'])
+        drug = self.drugs.get(prescription['drug_id'])
         if not drug: return []
 
-        # Dados
-        age_months = patient_profile['age_months']
-        weight = patient_profile['weight_kg']
-        conditions = set(patient_profile['conditions'])
-        allergies = set(patient_profile['allergies'])
-        current_meds_ids = patient_profile['current_meds']
-        
-        dose_input = prescription_item['dose_input']
-        freq = prescription_item['freq_hours']
-        route = prescription_item['route'] # Nova variável
-        
-        # Conversão ML -> MG
-        dose_mg = 0.0
-        if drug['concentracao_mg_ml']:
-            dose_mg = dose_input * drug['concentracao_mg_ml']
-        else:
-            dose_mg = dose_input
-        
-        # Regra Fatal da Adrenalina
+        # Variáveis
+        weight = patient['weight_kg']
+        age_months = patient['age_months']
+        conditions = set(patient['conditions'])
+        allergies = set(patient['allergies'])
+        current_meds_ids = patient['current_meds']
+        dose_input = prescription['dose_input']
+        route = prescription['route']
+
+        # Normalização de Dose
+        dose_mg = dose_input * drug['concentracao_mg_ml'] if drug['concentracao_mg_ml'] else dose_input
+
+        # --- VALIDACÕES ---
+        # 1. Via
+        if route not in drug['vias_permitidas']:
+            alerts.append({"type": "BLOCK", "msg": f"⛔ ERRO DE VIA: {drug['nome']} só aceita {drug['vias_permitidas']}."})
         if "Adrenalina" in drug['nome'] and route == "Endovenosa (IV)" and "parada_cardiaca" not in conditions:
-             alerts.append({"type": "BLOCK", "msg": "⛔ ERRO FATAL DE VIA: Adrenalina Endovenosa Pura é restrita para Parada Cardíaca. Use INTRAMUSCULAR."})
+             alerts.append({"type": "BLOCK", "msg": "⛔ ERRO FATAL: Adrenalina IV só em PCR."})
 
-        # --- CAMADA 1: IDADE ---
+        # 2. Idade
         if age_months < drug['min_idade_meses']:
-            alerts.append({"type": "BLOCK", "msg": f"⛔ PROIBIDO PARA IDADE ({age_months} meses). Mínimo: {drug['min_idade_meses']} meses."})
+            alerts.append({"type": "BLOCK", "msg": f"⛔ PROIBIDO PARA IDADE ({age_months} meses)."})
 
-        # --- CAMADA 2: ALERGIAS ---
-        drug_families = set(drug['familias_alergia'])
-        match_allergy = drug_families.intersection(allergies)
-        if match_allergy:
-            alerts.append({"type": "BLOCK", "msg": f"⛔ ALERGIA: Paciente alérgico a {list(match_allergy)}."})
+        # 3. Alergia
+        match_alg = set(drug['familias_alergia']).intersection(allergies)
+        if match_alg: alerts.append({"type": "BLOCK", "msg": f"⛔ ALERGIA A {list(match_alg)}."})
 
-        # --- CAMADA 3: CONTRAINDICAÇÕES ---
-        drug_contras = set(drug['contra_indicacoes'])
-        match_conditions = drug_contras.intersection(conditions)
-        if match_conditions:
-            alerts.append({"type": "BLOCK", "msg": f"⛔ CONTRAINDICAÇÃO: Incompatível com {list(match_conditions)}."})
+        # 4. Contraindicações
+        match_cond = set(drug['contra_indicacoes']).intersection(conditions)
+        if match_cond: alerts.append({"type": "BLOCK", "msg": f"⛔ CONTRAINDICADO PARA {list(match_cond)}."})
 
-        # --- CAMADA 4: DUPLICIDADE ---
-        existing_classes = set()
-        for med_id in current_meds_ids:
-            m = self.repo.get_drug(med_id)
-            if m: existing_classes.add(m['classe_terapeutica'])
-        
+        # 5. Duplicidade
+        existing_classes = {self.drugs[mid]['classe_terapeutica'] for mid in current_meds_ids if mid in self.drugs}
         if drug['classe_terapeutica'] in existing_classes:
-             alerts.append({"type": "WARNING", "msg": f"⚠️ DUPLICIDADE: Já usa fármaco da classe '{drug['classe_terapeutica']}'."})
+            alerts.append({"type": "WARNING", "msg": f"⚠️ DUPLICIDADE: Classe {drug['classe_terapeutica']} já em uso."})
 
-        # --- CAMADA 5: INTERAÇÕES ---
+        # 6. Interações
         active_principles = {drug['principio_ativo']}
-        for med_id in current_meds_ids:
-            m = self.repo.get_drug(med_id)
-            if m: active_principles.add(m['principio_ativo'])
+        for mid in current_meds_ids:
+            if mid in self.drugs: active_principles.add(self.drugs[mid]['principio_ativo'])
         
-        interaction_msgs = self.repo.check_interaction(active_principles)
-        for msg in interaction_msgs:
-            alerts.append({"type": "BLOCK" if "🔴" in msg else "WARNING", "msg": msg})
+        for rule in self.interactions:
+            if rule['pair'].issubset(active_principles):
+                alerts.append({"type": "BLOCK", "msg": rule['msg']})
 
-        # --- CAMADA 6: POSOLOGIA (CÁLCULO) ---
+        # 7. Posologia
+        # 7. Posologia
         is_child = age_months < 144
         ped_rule = drug.get('pediatria')
-
+        
         if is_child and ped_rule:
-            min_dose = weight * ped_rule['min']
-            max_dose = weight * ped_rule['max']
-            calculated_val = 0.0
+            # --- CORREÇÃO AQUI: ARREDONDAMENTO ---
+            # Arredonda para 4 casas decimais para evitar o erro "0.2 > 0.2"
+            min_dose = round(weight * ped_rule['min'], 4)
+            max_dose = round(weight * ped_rule['max'], 4)
             
-            if ped_rule['modo'] == 'mg_kg_dose':
-                calculated_val = dose_mg
-                label = "Dose Unitária"
-                # Teto Absoluto
-                if 'teto_dose' in ped_rule and calculated_val > ped_rule['teto_dose']:
-                    alerts.append({"type": "BLOCK", "msg": f"⛔ TETO ABSOLUTO EXCEDIDO: {calculated_val:.1f}mg > {ped_rule['teto_dose']}mg."})
-            else:
-                doses_per_day = 24 / freq
-                calculated_val = dose_mg * doses_per_day
-                label = "Dose Diária Total"
-
-            if calculated_val < min_dose:
-                alerts.append({"type": "WARNING", "msg": f"⚠️ SUBDOSE ({label}): {calculated_val:.0f}mg. Mínimo: {min_dose:.0f}mg."})
-            elif calculated_val > max_dose:
-                # Se for Adrenalina e passar muito, alerta especial
-                alerts.append({"type": "BLOCK", "msg": f"⛔ SOBREDOSE TÓXICA ({label}): {calculated_val:.1f}mg. Máximo seguro: {max_dose:.1f}mg."})
-        else:
-            # Adulto
-            doses_per_day = 24 / freq
-            total_daily = dose_mg * doses_per_day
-            if total_daily > drug['dose_max_diaria_adulto_mg']:
-                 alerts.append({"type": "BLOCK", "msg": f"⛔ DOSE DIÁRIA EXCEDIDA: {total_daily:.0f}mg > {drug['dose_max_diaria_adulto_mg']}mg."})
-    
-        # --- CAMADA 7: VIA DE ADMINISTRAÇÃO ---
-        if route not in drug['vias_permitidas']:
-            alerts.append({"type": "BLOCK", "msg": f"⛔ ERRO DE VIA: {drug['nome']} não permite via {route}. Use: {drug['vias_permitidas']}."})
+            # Calcula valor bruto
+            raw_val = dose_mg if ped_rule['modo'] == 'mg_kg_dose' else (dose_mg * (24/prescription['freq']))
+            val = round(raw_val, 4) # Arredonda o valor calculado também
+            
+            # Lógica de validação
+            if 'teto_dose' in ped_rule and ped_rule['teto_dose'] > 0 and val > ped_rule['teto_dose']:
+                alerts.append({"type": "BLOCK", "msg": f"⛔ TETO ABSOLUTO EXCEDIDO: {val}mg > {ped_rule['teto_dose']}mg."})
+            elif val > max_dose:
+                alerts.append({"type": "BLOCK", "msg": f"⛔ SOBREDOSE TÓXICA: {val}mg > {max_dose}mg."})
+            elif val < min_dose:
+                alerts.append({"type": "WARNING", "msg": f"⚠️ SUBDOSE: {val}mg < {min_dose}mg."})
         
+        elif not is_child:
+             # Arredonda adulto também
+             val_adulto = round(dose_mg * (24/prescription['freq']), 4)
+             if val_adulto > drug['dose_max_diaria_adulto_mg']:
+                 alerts.append({"type": "BLOCK", "msg": "⛔ DOSE MÁXIMA ADULTO EXCEDIDA."})
+
         return alerts
-    
-# ==============================================================================
-# 3. INTERFACE COMPLETA (RESTAURADA)
-# ==============================================================================
 
+# ==============================================================================
+# 3. INTERFACE DE USUÁRIO (FRONT + BACKOFFICE)
+# ==============================================================================
 def main():
-    st.set_page_config(page_title="ValidRx Master", layout="wide", page_icon="🛡️")
+    st.set_page_config(page_title="ValidRx Commercial", layout="wide", page_icon="💊")
     
-    repo = DrugRepository()
-    engine = ClinicalEngine(repo)
+    # Inicializa Banco
+    db = DatabaseManager()
+    
+    # Navegação
+    menu = st.sidebar.radio("Navegação", ["🩺 Módulo Prescritor", "⚙️ Backoffice (Admin)"])
 
-    st.title("🛡️ ValidRx")
-    st.markdown("O ValidRx é um mecanismo inteligente de supervisão clínica que valida prescrições em tempo real, prevenindo erros fatais de dosagem, interações medicamentosas e vias de administração")
+    if menu == "⚙️ Backoffice (Admin)":
+        render_admin_panel(db)
+    else:
+        render_prescriber_panel(db)
 
-    # --- SIDEBAR (Completa novamente) ---
+def render_admin_panel(db):
+    st.title("⚙️ Backoffice (Gestão de Regras)")
+    
+    tab_meds, tab_inter = st.tabs(["💊 Cadastrar Medicamentos", "⚠️ Cadastrar Interações"])
+
+    # --- ABA 1: MEDICAMENTOS ---
+    with tab_meds:
+        st.subheader("Novo Medicamento")
+        st.info("Preencha os dados abaixo. O sistema valida automaticamente conforme você digita.")
+        
+        # REMOVI O st.form PARA PERMITIR INTERATIVIDADE
+        
+        col1, col2 = st.columns(2)
+        id_drug = col1.text_input("ID (Ex: MED_DEXA)", "").upper()
+        nome = col2.text_input("Nome Comercial", "")
+        principio = col1.text_input("Princípio Ativo", "").lower()
+        classe = col2.text_input("Classe Terapêutica (p/ Duplicidade)", "").lower()
+        
+        conc = st.number_input("Concentração (mg/mL) - 0 se for comprimido", 0.0)
+        min_idade = st.number_input("Idade Mínima (meses)", 0)
+        max_adulto = st.number_input("Dose Máx Adulto (mg/dia)", 0.0)
+        
+        st.markdown("---")
+        st.caption("🛡️ Camadas de Segurança")
+        vias = st.multiselect("Vias Permitidas", ["Oral", "Endovenosa (IV)", "Intramuscular (IM)", "Subcutânea"])
+        alergias = st.text_input("Famílias Alergia (ex: aines, penicilina)", "")
+        contras = st.text_input("Contraindicações (ex: dengue, gastrite)", "")
+        
+        # --- AQUI ESTÁ A MÁGICA: CHECKBOX REATIVO ---
+        st.markdown("---")
+        st.caption("🧸 Regras Pediátricas")
+        
+        # Agora, ao clicar aqui, o Streamlit recarrega a tela e entra no IF abaixo
+        tem_ped = st.checkbox("Habilitar modo pediátrico? (Cálculo mg/kg)")
+        
+        modo = "mg_kg_dose"
+        p_min, p_max, p_teto = 0.0, 0.0, 0.0
+        
+        if tem_ped:
+            st.success("Modo Pediátrico Ativado! Preencha os limites abaixo:")
+            modo = st.selectbox("Modo de Cálculo", ["mg_kg_dose", "mg_kg_dia"])
+            c1, c2, c3 = st.columns(3)
+            p_min = c1.number_input("Mínimo (mg/kg)", 0.0)
+            p_max = c2.number_input("Máximo (mg/kg)", 0.0)
+            p_teto = c3.number_input("Teto Absoluto (mg)", 0.0)
+        
+        st.markdown("###")
+        if st.button("💾 Salvar Medicamento", type="primary"):
+            if not id_drug or not nome:
+                st.error("ERRO: ID e Nome são obrigatórios.")
+            else:
+                lista_alergias = [x.strip().lower() for x in alergias.split(",") if x.strip()]
+                lista_contras = [x.strip().lower() for x in contras.split(",") if x.strip()]
+                
+                rule = None
+                if tem_ped:
+                    rule = {"modo": modo, "min": p_min, "max": p_max, "teto_dose": p_teto}
+                
+                db.add_drug(id_drug, nome, principio, classe, lista_alergias, conc, min_idade, max_adulto, lista_contras, vias, rule)
+                st.success(f"✅ Medicamento {nome} salvo com sucesso no Banco de Dados!")
+
+    # --- ABA 2: INTERAÇÕES ---
+    with tab_inter:
+        st.subheader("Nova Regra de Interação")
+        
+        # Aqui mantivemos o form porque não tem campos condicionais complexos
+        with st.form("add_interaction_form"):
+            c1, c2 = st.columns(2)
+            sub_a = c1.text_input("Substância A (Princípio Ativo)", "").lower()
+            sub_b = c2.text_input("Substância B (Princípio Ativo)", "").lower()
+            
+            nivel = st.selectbox("Nível de Risco", ["ALTO (Bloquear)", "MEDIO (Avisar)"])
+            msg = st.text_area("Mensagem de Alerta", "🔴 Risco de...")
+            
+            if st.form_submit_button("🔗 Criar Regra de Interação"):
+                if not sub_a or not sub_b:
+                    st.error("Preencha as duas substâncias.")
+                else:
+                    db.add_interaction(sub_a, sub_b, nivel, msg)
+                    st.success(f"Regra entre {sub_a} e {sub_b} criada!")
+
+        st.divider()
+        st.write("📋 **Regras Cadastradas no Banco:**")
+        regras = db.get_interactions()
+        if not regras:
+            st.caption("Nenhuma regra cadastrada ainda.")
+        for r in regras:
+            st.code(f"{list(r['pair'])} -> {r['msg']}")
+            
+def render_prescriber_panel(db):
+    st.title("🩺 ValidRx: Prescrição Segura")
+    
+    # Carrega dados ATUALIZADOS do banco
+    drugs_dict = db.get_all_drugs_dict()
+    interactions = db.get_interactions()
+    engine = ClinicalEngine(drugs_dict, interactions)
+    
+    # --- UI do Prescritor ---
     with st.sidebar:
-        st.header("📋 Prontuário Eletrônico")
+        st.header("Dados do Paciente")
+        weight = st.number_input("Peso (kg)", min_value=0.5, max_value=200.0, value=20.0, step=0.5)
+        age = st.number_input("Idade (meses)", min_value=0, max_value=1200, value=60)
         
-        weight = st.number_input("Peso (kg)", 2.0, 150.0, 20.0, 0.5)
-        age_years = st.number_input("Idade (Anos)", 0, 100, 6)
-        age_months_rem = st.number_input("Meses", 0, 11, 0)
-        total_months = (age_years * 12) + age_months_rem
+        st.subheader("Histórico Clínico")
+        conds = st.multiselect("Condições", ["parada_cardiaca", "dengue", "insuficiencia_renal", "gastrite"])
+        algs = st.multiselect("Alergias", ["penicilina", "aines", "dipirona"])
         
-        st.subheader("Condições Clínicas")
-        conditions = []
-        # Adicionei Parada Cardíaca para permitir teste da Adrenalina
-        if st.checkbox("Paciente em Parada Cardíaca"): conditions.append("parada_cardiaca")
-        if st.checkbox("Insuficiência Renal"): conditions.append("insuficiencia_renal")
-        if st.checkbox("Dengue / Suspeita"): conditions.append("dengue")
-        if st.checkbox("Gastrite / Úlcera"): conditions.append("gastrite")
+        # Selectbox de uso contínuo dinâmico
+        drug_names = {v['nome']: k for k,v in drugs_dict.items()}
+        in_use = st.multiselect("Em Uso (Já toma)", list(drug_names.keys()))
+        in_use_ids = [drug_names[n] for n in in_use]
 
-        st.subheader("Alergias")
-        allergies = []
-        if st.checkbox("Alergia a Penicilina"): allergies.append("penicilina")
-        if st.checkbox("Alergia a AINEs"): allergies.append("aines")
-
-        st.subheader("Em Uso Contínuo (Interação)")
-        current_meds_names = st.multiselect(
-            "Medicamentos já em uso:",
-            options=["Varfarina 5mg", "Diclofenaco Potássico 50mg"],
-            default=[]
-        )
-        name_to_id = repo.get_all_drugs_list()
-        current_meds_ids = [name_to_id[name] for name in current_meds_names]
-
-    # --- MAIN FORM ---
-    col_input, col_output = st.columns([1, 1])
-
-    with col_input:
-        st.subheader("✍️ Nova Prescrição")
-        with st.form("rx_form"):
-            drug_name = st.selectbox("Medicamento", list(name_to_id.keys()))
-            drug_id = name_to_id[drug_name]
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Detalhes da Prescrição")
+        sel_name = st.selectbox("Medicamento", list(drug_names.keys()))
+        sel_id = drug_names[sel_name]
+        drug_data = drugs_dict[sel_id]
+        
+        # --- AJUSTE AQUI: INPUT DE DOSE SEGURO ---
+        if drug_data['concentracao_mg_ml']:
+            st.info(f"🧪 Líquido: {drug_data['concentracao_mg_ml']} mg/mL")
+            # Value=1.0 para evitar viés de ancoragem (5ml era muito alto)
+            dose = st.number_input("Dose (mL)", min_value=0.1, max_value=500.0, value=1.0, step=0.1)
+        else:
+            st.info("💊 Comprimido (Dose Fixa)")
+            # Value=1.0 ou uma dose baixa segura
+            dose = st.number_input("Dose (mg)", min_value=1.0, max_value=5000.0, value=1.0, step=1.0)
             
-            drug_details = repo.get_drug(drug_id)
+        # Adicionei 'Subcutânea' para compatibilidade com Adrenalina se necessário
+        route = st.selectbox("Via de Administração", ["Oral", "Endovenosa (IV)", "Intramuscular (IM)", "Subcutânea"])
+        freq = st.number_input("Frequência (a cada X horas)", min_value=1, max_value=48, value=8)
+        
+        st.markdown("---")
+        if st.button("🔍 Validar Prescrição", type="primary"):
+            pat = {"weight_kg": weight, "age_months": age, "conditions": conds, "allergies": algs, "current_meds": in_use_ids}
+            presc = {"drug_id": sel_id, "dose_input": dose, "route": route, "freq": freq}
             
-            # Info Contextual
-            if drug_details['concentracao_mg_ml']:
-                st.info(f"🧪 Líquido: {drug_details['concentracao_mg_ml']} mg/mL")
-                dose_input = st.number_input("Dose (mL)", 0.1, 100.0, 5.0, 0.1)
-            else:
-                st.info("💊 Comprimido (Dose Fixa)")
-                dose_input = st.number_input("Dose (mg)", 1.0, 1000.0, 50.0)
-
-            # Nova Camada: Via
-            route = st.selectbox("Via de Administração", ["Oral", "Endovenosa (IV)", "Intramuscular (IM)", "Subcutânea"])
+            alerts = engine.validate(pat, presc)
             
-            freq = st.selectbox("Frequência", [6, 8, 12, 24, "Dose Única"])
-            freq_val = 24 if freq == "Dose Única" else freq
-            
-            submit = st.form_submit_button("🔍 Validar Tudo")
-
-    # --- RESULTADOS ---
-    with col_output:
-        if submit:
-            patient = {
-                "weight_kg": weight, "age_months": total_months,
-                "conditions": conditions, "allergies": allergies,
-                "current_meds": current_meds_ids
-            }
-            prescription = {
-                "drug_id": drug_id, "dose_input": dose_input,
-                "freq_hours": freq_val, "route": route
-            }
-
-            results = engine.validate_prescription(patient, prescription)
-
-            st.subheader("Relatório de Segurança")
-            if not results:
-                st.success("✅ Prescrição Segura!")
-            else:
-                st.error("⚠️ Problemas Encontrados:")
-                for alert in results:
-                    if alert['type'] == 'BLOCK':
-                        st.markdown(f"❌ **BLOQUEANTE:** {alert['msg']}")
-                    elif alert['type'] == 'WARNING':
-                        st.markdown(f"⚠️ **ALERTA:** {alert['msg']}")
+            with col2:
+                st.subheader("Resultado da Análise")
+                if not alerts: 
+                    st.success("✅ **Prescrição Aprovada!**\n\nNenhum risco detectado para este paciente.")
+                else:
+                    st.error(f"⚠️ **Foram encontrados {len(alerts)} problemas:**")
+                    for a in alerts:
+                        if a['type'] == 'BLOCK': 
+                            st.error(f"⛔ {a['msg']}")
+                        else: 
+                            st.warning(f"⚠️ {a['msg']}")
 
 if __name__ == "__main__":
     main()
