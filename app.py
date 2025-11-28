@@ -245,21 +245,22 @@ class ClinicalEngine:
 # 3. INTERFACE DE USUÁRIO (FRONT + BACKOFFICE)
 # ==============================================================================
 def main():
-    st.set_page_config(page_title="ValidRx Commercial", layout="wide", page_icon="💊")
+    st.set_page_config(page_title="ValidRx", layout="wide", page_icon="💊")
     
     # Inicializa Banco
     db = DatabaseManager()
     
     # Navegação
-    menu = st.sidebar.radio("Navegação", ["🩺 Módulo Prescritor", "⚙️ Backoffice (Admin)"])
+    menu = st.sidebar.radio("Navegação", ["🩺 Supervisor de Prescrição", "⚙️ Medicamentos e Interação Medicamentosa"])
 
-    if menu == "⚙️ Backoffice (Admin)":
+    if menu == "⚙️ Medicamentos e Interação Medicamentosa":
         render_admin_panel(db)
     else:
         render_prescriber_panel(db)
 
 def render_admin_panel(db):
-    st.title("⚙️ Backoffice (Gestão de Regras)")
+    st.title("⚙️ Medicamentos e Interação Medicamentosa")
+    st.markdown("Interface para Farmacêuticos ou Médicos Curadores (sua equipe) cadastrarem meducamentos e interações entre eles.")
     
     tab_meds, tab_inter = st.tabs(["💊 Cadastrar Medicamentos", "⚠️ Cadastrar Interações"])
 
@@ -349,6 +350,7 @@ def render_admin_panel(db):
             
 def render_prescriber_panel(db):
     st.title("🩺 ValidRx: Prescrição Segura")
+    st.markdown("O ValidRx é um mecanismo inteligente de supervisão clínica que valida prescrições em tempo real, prevenindo erros fatais de dosagem, interações medicamentosas e vias de administração")
     
     # Carrega dados ATUALIZADOS do banco
     drugs_dict = db.get_all_drugs_dict()
