@@ -349,8 +349,8 @@ def render_admin_panel(db):
             st.code(f"{list(r['pair'])} -> {r['msg']}")
             
 def render_prescriber_panel(db):
-    st.title("🩺 ValidRx: Prescrição Segura")
-    st.markdown("O ValidRx é um mecanismo inteligente de supervisão clínica que valida prescrições em tempo real, prevenindo erros fatais de dosagem, interações medicamentosas e vias de administração")
+    st.title("🩺 Supervisor de Prescrição")
+    st.markdown("O Supervisor de Prescrição é um mecanismo inteligente de supervisão clínica que valida prescrições em tempo real, prevenindo erros fatais de dosagem, interações medicamentosas e vias de administração.")
     
     # Carrega dados ATUALIZADOS do banco
     drugs_dict = db.get_all_drugs_dict()
